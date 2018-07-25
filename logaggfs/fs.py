@@ -1,12 +1,16 @@
 import os
 import threading
+from hashlib import md5
+import time
 
 from basescript import init_logger
-from deeputil import Dummy
+from deeputil import Dummy, generate_random_string
+
 import fuse
 from fuse import Fuse
 
 from .mirrorfs import MirrorFS, MirrorFSFile, logit
+from .mirrorfs import flag2mode
 
 DUMMY_LOG = Dummy()
 
@@ -14,37 +18,49 @@ class LogaggFS(MirrorFS):
     pass
 
 class LogaggFSFile(MirrorFSFile):
-   @logit
-   def write(self, buf, offset):
+
+    @logit
+    def write(self, buf, offset):
         self.file.seek(offset)
         self.file.write(buf)
-        self.cache.write(buf)
+        self.cached_file.write(self.path, buf)
         return len(buf)
 
 class RotatingFile:
-    def __init__(self, directory, state_file, max_files=100,
+    def __init__(self, directory, state_file,
         max_file_size=500*1000, log=DUMMY_LOG):
-        self.ii = 1
-        self.directory, self.filename      = os.path.abspath(directory), filename
-        self.max_file_size, self.max_files = max_file_size, max_files
-        self.finished, self.fh             = False, None
-        self.open()
+        self.directory, self.state_file = os.path.abspath(directory), state_file
+        self.max_file_size = max_file_size
+        self.log = log
+
+        self.path_list = None
+        self.timestamp = str(time.time()).split('.')[0]
+        self.fh = None
+
+    def _make_file_set():
+        '''
+        make a set of files from state file
+        '''
+        fh = open(self.state_file)
+        path_list = fh.readlines()
+        path_set = set(i.split('\n')[0] for i in path_list)
+        return path_set
 
     def rotate(self, text):
-        """Rotate the file, if necessary"""
+        '''
+        Rotate the file, if necessary
+        '''
         if (os.stat(self.filename_template).st_size>self.max_file_size) and text.endswith("\n"):
             self.close()
-            self.ii += 1
-            if (self.ii<=self.max_files):
-                self.open()
-            else:
-                self.close()
-                self.finished = True
+            self.timestamp = str(time.time()).split('.')[0]
+            self.open()
 
     def open(self):
-        self.fh = open(self.filename_template, 'w')
+        self.fh = open(self.filename_template, 'a')
 
-    def write(self, text=""):
+    def write(self, fpath, text=""):
+        self.fpath = fpath
+        self.open()
         self.fh.write(text)
         self.fh.flush()
         self.rotate(text)
@@ -54,7 +70,10 @@ class RotatingFile:
 
     @property
     def filename_template(self):
-        return self.directory + '/' + self.filename + "%0.2d" % self.ii
+        fpath = self.fpath.encode("utf-8")
+        hash_fpath = md5(fpath).hexdigest()
+        r = generate_random_string(5).decode("utf-8")
+        return self.directory + '/' + hash_fpath + '.' + self.timestamp + '.' + r
 
 class LogaggFuseRunner:
     def __init__(self):
@@ -86,7 +105,6 @@ class LogaggFuseRunner:
         p.add_option('--log-file', type=str, default=None,
                                 help='file path to store logs')
 
-        import pdb; pdb.set_trace()
         server.parse(values=server, errex=1)
         self.opts, self.args = server.parser.parse_args()
 
@@ -116,22 +134,23 @@ class LogaggFuseRunner:
             log.exception("can't enter root of underlying filesystem", file=sys.stderr)
             sys.exit(1)
 
-        '''
-        #mkdir logs directory for keeping cached logs
-        cache_dir = os.path.abspath(os.path.join(self.opts.mount_from, "logs"))
-        if not os.path.isdir(cache_dir):
-            self.log.debug('making_cache_directory', d=cache_dir)
-            os.makedirs(cache_dir)
-        self.cache_dir = cache_dir
 
-        #touch monitered-files.txt
-        state_file = os.path.abspath(os.path.join(self.opts.root, "monitered-files.txt"))
+        #mkdir logs directory for keeping cached logs
+        log_dir = os.path.abspath(os.path.join(self.log_cache_dir, "logs"))
+        if not os.path.isdir(log_dir):
+            self.log.debug('making_cache_directory', d=log_dir)
+            os.makedirs(log_dir)
+        self.log_dir = log_dir
+
+        #touch state.txt
+        state_file = os.path.abspath(os.path.join(self.log_cache_dir, "state.txt"))
         if not os.path.exists(state_file):
+            self.log.debug('making_state_file', f=state_file)
             open(state_file, 'a').close()
         self.state_file = state_file
 
-        #LogaggFSFile.cache = RotatingFile(self.cache_dir, state_file=self.state_file, log=self.log)
-        '''
+        LogaggFSFile.cached_file = RotatingFile(self.log_dir, state_file=self.state_file, log=self.log)
+
         server.main()
 
     def start(self):
