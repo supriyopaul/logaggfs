@@ -48,7 +48,7 @@ class MirrorFSFile(object):
 
     @logit
     def __init__(self, path, flags, *mode):
-        self.path = path = self.root[:-1] + path
+        self.path = path = self.log_cache_dir + '/mirror' + path
         self.file = os.fdopen(os.open(path, flags, *mode),
                               flag2mode(flags))
         self.fd = self.file.fileno()
@@ -138,21 +138,31 @@ class MirrorFSFile(object):
 class MirrorFS(Fuse):
 
     def __init__(self,
-            log=DUMMY_LOG,
             file_class=None,
-            root='/',
             *args,
             **kw):
         Fuse.__init__(self, *args, **kw)
 
-        self.log = log
-        self.root = root
+        self.log = DUMMY_LOG
+        self._log_cache_dir = None
+        self._mirror_dir = None
         self.file_class = file_class or MirrorFSFile
-        self.logit = logit
+
+    @property
+    def log_cache_dir(self):
+        return self._log_cache_dir
+
+    @log_cache_dir.setter
+    def log_cache_dir(self, v):
+        self._log_cache_dir = v
+        self._mirror_dir = v + '/mirror'
+        if not os.path.exists(self._mirror_dir):
+            os.makedirs(self._mirror_dir)
 
     def _mappath(self, path):
-        _path = self.root[:-1] + path # removed / at end of root
-        self.log.debug('_mappath', fromp=path, top=_path, root=self.root)
+        _path = self._mirror_dir + path
+        self.log.debug('_mappath', fromp=path, top=_path,
+                log_cache_dir=self._log_cache_dir)
         return _path
 
     @logit
@@ -285,11 +295,11 @@ class MirrorFS(Fuse):
             - f_ffree - nunber of free file inodes
         """
 
-        return os.statvfs(self.root)
+        return os.statvfs(self._mirror_dir)
 
     @logit
     def fsinit(self):
-        os.chdir(self.root)
+        os.chdir(self._mirror_dir)
 
     def main(self, *a, **kw):
         return Fuse.main(self, *a, **kw)
