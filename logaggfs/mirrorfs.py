@@ -48,6 +48,7 @@ class MirrorFSFile(object):
 
     @logit
     def __init__(self, path, flags, *mode):
+        self.frompath = path
         self.path = path = self.log_cache_dir + '/mirror' + path
         self.file = os.fdopen(os.open(path, flags, *mode),
                               flag2mode(flags))
