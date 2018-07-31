@@ -22,17 +22,11 @@ class TrackList:
     def __init__(self, state_file, directory, log=DUMMY_LOG):
         self.state_file = state_file
         self.directory = directory
-        self.path_set = set()
         self.log = log
 
-        # launch refresh thread
-        th = threading.Thread(target=self._update_file_set)
-        th.daemon = True
-        th.start()
-        self.update_file_set = th
+        self.path_set = set()
 
-    @keeprunning(wait_secs=REFRESH_INTERVAL)
-    def _update_file_set(self):
+    def update(self):
         '''
         make a set of files from state file
         '''
@@ -55,11 +49,16 @@ class LogaggFSFile(MirrorFSFile):
     def __init__(self, *args, **kwargs):
         super().__init__( *args, **kwargs)
 
-        if self.frompath in self.tracklist.path_set:
+        if self.frompath == "/.update":
+            self.tracklist.update()
+
+        full_path = self.mountpoint + self.frompath
+
+        if full_path in self.tracklist.path_set:
             self.capture = True
             self.rfile = RotatingFile(
                     self.tracklist.directory,
-                    self._compute_hash(self.frompath))
+                    self._compute_hash(full_path))
         else:
             self.capture = False
 
@@ -205,6 +204,7 @@ class LogaggFuseRunner:
                         directory=self.log_dir,
                         log=self.log)
         LogaggFSFile.tracklist = tracklist
+        LogaggFSFile.mountpoint = server.fuse_args.mountpoint
 
         server.main()
 
