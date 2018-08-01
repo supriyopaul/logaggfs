@@ -113,7 +113,7 @@ class RotatingFile:
     @property
     def filename_template(self):
         r = generate_random_string(5).decode("utf-8")
-        return self.directory + '/' + self.filename + '.' + self.timestamp
+        return self.directory + '/' + self.filename + '.' + self.timestamp + '.log'
 
 
 class LogaggFuseRunner:
@@ -162,7 +162,7 @@ class LogaggFuseRunner:
                                  help="mountpoint")
         p.add_option('--log-cache-dir',
                                 help='directory where the logs are stored')
-        p.add_option('--log-level', type=str, default='DEBUG',
+        p.add_option('--log-level', type=str, default='INFO',
                                 help='level of logger [DEBUG, INFO]')
         p.add_option('--log-file', type=str, default=None,
                                 help='file path to store logs')
