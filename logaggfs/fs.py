@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+
 import os
 import threading
 from hashlib import md5
@@ -158,13 +160,11 @@ class LogaggFuseRunner:
         self.fuse_server = server
 
         p = server.parser
-        p.add_option(mountopt="root", metavar="PATH",
-                                 help="mountpoint")
-        p.add_option('--log-cache-dir',
-                                help='directory where the logs are stored')
-        p.add_option('--log-level', type=str, default='INFO',
-                                help='level of logger [DEBUG, INFO]')
-        p.add_option('--log-file', type=str, default=None,
+        p.add_option(mountopt='root', metavar='PATH',
+                                 help='mountpoint')
+        p.add_option(mountopt='loglevel', metavar='DEBUG/INFO' ,default='INFO',
+                                help='level of logger')
+        p.add_option(mountopt='logfile', metavar='PATH', default='/tmp/fuse.log',
                                 help='file path to store logs')
 
         server.parse(values=server, errex=1)
@@ -172,11 +172,11 @@ class LogaggFuseRunner:
 
         #initiating logger
         self.log = DUMMY_LOG
-        if self.opts.log_file:
-            self.log = init_logger(fpath=self.opts.log_file,
-                                level=self.opts.log_level)
+        if self.opts.logfile:
+            self.log = init_logger(fpath=self.opts.logfile,
+                                level=self.opts.loglevel)
 
-        ldir = os.path.abspath(self.opts.log_cache_dir)
+        ldir = os.path.abspath(server.root)
         ldir = os.path.join(ldir, '')[:-1]
         self.log_cache_dir = ldir
 
