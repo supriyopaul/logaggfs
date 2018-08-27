@@ -6,8 +6,8 @@ from hashlib import md5
 import time
 
 from basescript import init_logger
-from deeputil import Dummy, generate_random_string
-from deeputil import keeprunning
+from deeputil import Dummy
+from deeputil import AttrDict
 
 import fuse
 from fuse import Fuse
@@ -19,32 +19,33 @@ DUMMY_LOG = Dummy()
 
 class TrackList:
 
-    REFRESH_INTERVAL = 0.5
-
     def __init__(self, state_file, directory, log=DUMMY_LOG):
         self.state_file = state_file
         self.directory = directory
         self.log = log
 
-        self.path_set = set()
+        self.fpaths = dict()
 
     def update(self):
         '''
         make a set of files from state file
         '''
-        self.log.debug('checking_state_file_for_changes', tracked_files=self.path_set)
+        self.log.debug('checking_state_file_for_changes', tracked_files=self.fpaths)
         fh = open(self.state_file)
         path_list = fh.readlines()
-        path_set = set(i.split('\n')[0] for i in path_list)
-        fh.close()
-        self.path_set = path_set
 
-        time.sleep(self.REFRESH_INTERVAL)
+        for p in path_list:
+            if p in self.fpaths.keys(): pass
+            else: self.fpaths[p[:-1]] = None
+
+        fh.close()
+
 
 class LogaggFS(MirrorFS):
     pass
 
 class LogaggFSFile(MirrorFSFile):
+
 
     @logit
     # FIXME: take path also as parameter
@@ -54,15 +55,14 @@ class LogaggFSFile(MirrorFSFile):
         if self.frompath == "/.update":
             self.tracklist.update()
 
-        full_path = self.mountpoint + self.frompath
+        self.full_path = self.mountpoint + self.frompath
 
-        if full_path in self.tracklist.path_set:
-            self.capture = True
-            self.rfile = RotatingFile(
-                    self.tracklist.directory,
-                    self._compute_hash(full_path))
-        else:
-            self.capture = False
+        if self.full_path in self.tracklist.fpaths and self.tracklist.fpaths[self.full_path] is None:
+            #import pdb; pdb.set_trace()
+            self.tracklist.fpaths[self.full_path] = RotatingFile(
+                                                        self.tracklist.directory,
+                                                        self._compute_hash(self.full_path)
+                                                        )
 
     def _compute_hash(self, fpath):
         fpath = fpath.encode("utf-8")
@@ -72,11 +72,12 @@ class LogaggFSFile(MirrorFSFile):
 
     @logit
     def write(self, buf, offset):
+        #import pdb; pdb.set_trace()
         self.file.seek(offset)
         self.file.write(buf)
-        if self.capture:
-            self.log.debug('writing_to_rotating_file', file=self.rfile)
-            self.rfile.write(buf)
+        if self.tracklist.fpaths[self.full_path] != None:
+            self.log.debug('writing_to_rotating_file', file=self.tracklist.fpaths[self.full_path])
+            self.tracklist.fpaths[self.full_path].write(buf)
         return len(buf)
 
 class RotatingFile:
@@ -95,12 +96,13 @@ class RotatingFile:
         '''
         Rotate the file, if necessary
         '''
-        if (os.stat(self.filename_template).st_size>self.max_file_size) and text.endswith("\n"):
+        if (os.stat(self.filename_template).st_size > self.max_file_size) and text.endswith("\n"):
             self._close()
             self.timestamp = str(time.time())
             self._open()
 
     def _open(self):
+        self.log.debug('new_rotating_file_created', f=self.filename_template)
         self.fh = open(self.filename_template, 'a')
 
     def write(self, text=""):
@@ -114,7 +116,6 @@ class RotatingFile:
 
     @property
     def filename_template(self):
-        r = generate_random_string(5).decode("utf-8")
         return self.directory + '/' + self.filename + '.' + self.timestamp + '.log'
 
 
