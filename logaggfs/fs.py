@@ -4,6 +4,7 @@ import os
 import threading
 from hashlib import md5
 import time
+import glob
 
 from basescript import init_logger
 from deeputil import Dummy
@@ -30,14 +31,26 @@ class TrackList:
         '''
         make a set of files from state file
         '''
-        self.log.debug('checking_state_file_for_changes', tracked_files=self.fpaths)
+
         fh = open(self.state_file)
         path_list = fh.readlines()
+        fpaths = dict()
 
-        for p in path_list:
-            if p in self.fpaths.keys(): pass
-            else: self.fpaths[p[:-1]] = None
+        # Make an empty like dictionary of new fpaths
+        for pattern in path_list:
+            for fpath in glob.glob(pattern[:-1]):
+                fpaths[fpath] = None
 
+        # Chen new fpaths to ones ones and modify
+        for path in fpaths:
+
+            if path not in self.fpaths: self.fpaths[path] = fpaths[path]
+
+        for path in self.fpaths:
+
+            if path not in fpaths: self.fpaths.pop(path)
+
+        self.log.debug('checking_state_file_for_changes', tracked_files=self.fpaths)
         fh.close()
 
 
@@ -72,10 +85,9 @@ class LogaggFSFile(MirrorFSFile):
 
     @logit
     def write(self, buf, offset):
-        #import pdb; pdb.set_trace()
         self.file.seek(offset)
         self.file.write(buf)
-        if self.tracklist.fpaths[self.full_path] != None:
+        if self.tracklist.fpaths.get(self.full_path):
             self.log.debug('writing_to_rotating_file', file=self.tracklist.fpaths[self.full_path])
             self.tracklist.fpaths[self.full_path].write(buf)
         return len(buf)
